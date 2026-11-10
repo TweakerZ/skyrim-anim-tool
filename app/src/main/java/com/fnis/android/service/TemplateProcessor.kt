@@ -164,10 +164,13 @@ class TemplateProcessor {
         while (i < end) {
             val line = lines[i]
 
-            // End of current block level. Only return when nested; a stray
-            // $$ at top level (leftover from conditionals) must not truncate.
+            // End of current block level. Inside a multiply block this returns
+            // to the caller. At top level the line belongs to a conditional
+            // block, so keep it for the conditional pass instead of dropping
+            // the marker it needs to find its end.
             if (multiplyEndRegex.matchEntire(line) != null) {
-                if (depth > 0) return // caller handles i++
+                if (depth > 0) return
+                out.add(line)
                 i++
                 continue
             }
