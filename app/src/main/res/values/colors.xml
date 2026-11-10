@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window / background (Skyrim Nordic palette, DML style) -->
+    <color name="loot_window_background">#FF05070A</color>
+    <color name="loot_background">#FF05070A</color>
+    <color name="loot_backgroundRaised">#FF0B1015</color>
+
+    <color name="loot_surface">#FF111820</color>
+
+    <color name="loot_primary">#FFAED2EC</color>
+    <color name="loot_primaryDark">#FF1E3B52</color>
+
+    <color name="loot_amber">#FFD1B06A</color>
+    <color name="loot_red">#FFE08A8A</color>
+
+    <color name="loot_text">#FFE8EEF2</color>
+    <color name="loot_textMuted">#FFB4C0C8</color>
+    <color name="loot_textDim">#FF7D8A94</color>
+</resources>
