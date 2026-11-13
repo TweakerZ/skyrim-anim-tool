@@ -15,22 +15,17 @@ import java.util.Locale
 
 class FnisGeneratorService(private val context: Context) {
 
-    data class ExportResult(
-        val copied: List<String>,
-        val errors: List<String>,
-        val skipped: List<String> = emptyList(),
-        val behaviorsSkipped: Int = 0,
-    )
-
     private val outputDir = File(context.filesDir, "output")
+    private val zipDir = File(context.cacheDir, "mod-package")
 
     fun initialize(): Boolean {
         outputDir.mkdirs()
         // Behavior artifacts from a previous run were produced by an older
         // generator and may not pass today's validation, so never let them be
-        // exported without a fresh Generate.
+        // packed into a mod archive without a fresh Generate.
         outputDir.listFiles { file -> file.isFile && file.name.endsWith(".hkx", ignoreCase = true) }
             ?.forEach { it.delete() }
+        zipDir.deleteRecursively()
         return true
     }
 
@@ -129,55 +124,36 @@ class FnisGeneratorService(private val context: Context) {
     }
 
     /**
-     * Copies the verified generated files into the Skyrim Data folder.
+     * Builds the mod archive from the last generation.
      *
-     * Behavior .hkx and animation data files are never copied. A behavior that
-     * passes the structural gate can still differ from the one the engine
-     * expects, and a wrong graph crashes Skyrim on the first frame; the
-     * animation data files have a record layout the template engine does not
-     * reproduce yet. The mod ships working baselines, so they stay untouched
-     * and only scripts and the patch report are installed.
+     * The archive holds the verified generated files at Data-relative paths, so
+     * a mod loader can install it like any other mod. Behavior .hkx and
+     * animation data files are excluded: a behavior that passes the structural
+     * gate can still differ from the one the engine expects, and a wrong graph
+     * crashes Skyrim on the first frame.
      */
-    fun exportToData(dataDir: File): ExportResult {
-        val copied = mutableListOf<String>()
-        val errors = mutableListOf<String>()
-        val skipped = mutableListOf<String>()
-        var behaviorsSkipped = 0
-        val backupRoot = File(
-            dataDir,
-            "tools/GenerateFNIS_for_Users/temporary_logs/backup_${fileTimestamp()}"
-        )
+    fun buildModZip(): ModPackage.Result {
+        outputDir.mkdirs()
+        val zip = File(zipDir, "Skyrim Anims.zip")
+        if (zip.isFile) zip.delete()
+        return ModPackage.build(outputDir, zip)
+    }
 
-        outputDir.listFiles()?.sortedBy { it.name }?.forEach { file ->
-            if (isUnverifiedAnimationData(file.name)) {
-                skipped += file.name
-                return@forEach
-            }
-            if (file.name.endsWith(".pex", ignoreCase = true) && !looksLikePex(file)) {
-                errors += "${file.name}: not a Papyrus executable, skipped"
-                return@forEach
-            }
-            if (file.name.endsWith(".hkx", ignoreCase = true)) {
-                behaviorsSkipped++
-                return@forEach
-            }
-
-            val dest = destinationFor(file.name, dataDir) ?: return@forEach
-            try {
-                dest.parentFile?.mkdirs()
-                if (dest.isFile) {
-                    val backup = File(backupRoot, dest.name)
-                    backup.parentFile?.mkdirs()
-                    dest.copyTo(backup, overwrite = true)
-                }
-                file.copyTo(dest, overwrite = true)
-                copied += dest.absolutePath
-            } catch (e: Exception) {
-                errors += "${file.name}: ${e.message}"
-            }
+    /**
+     * Archive name proposed in the save dialog. The version makes it obvious
+     * which build a mod manager has installed.
+     */
+    fun suggestedZipName(): String {
+        val version = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        } catch (_: Exception) {
+            null
         }
-
-        return ExportResult(copied, errors, skipped, behaviorsSkipped)
+        return if (version.isNullOrBlank()) {
+            "Skyrim Anims.zip"
+        } else {
+            "Skyrim Anims $version.zip"
+        }
     }
 
     fun writeOutput(fileName: String, content: String): File {
@@ -209,36 +185,6 @@ class FnisGeneratorService(private val context: Context) {
         } else {
             name
         }
-
-    private fun isUnverifiedAnimationData(fileName: String): Boolean =
-        fileName.equals("animationdatasinglefile.txt", ignoreCase = true) ||
-            fileName.equals("animationsetdatasinglefile.txt", ignoreCase = true)
-
-    /**
-     * Papyrus executables start with the pex magic 0xFA57C0DE.
-     */
-    private fun looksLikePex(file: File): Boolean = hasMagic(file, 0xFA, 0x57, 0xC0, 0xDE)
-
-    private fun hasMagic(file: File, vararg magic: Int): Boolean {
-        if (file.length() < magic.size) return false
-        return try {
-            val header = ByteArray(magic.size)
-            file.inputStream().use { it.read(header) }
-            magic.indices.all { header[it] == magic[it].toByte() }
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    private fun destinationFor(fileName: String, dataDir: File): File? {
-        return when {
-            fileName.endsWith(".pex") ->
-                File(dataDir, "scripts/$fileName")
-            fileName == "FNIS_Patches.txt" ->
-                File(dataDir, "tools/GenerateFNIS_for_Users/$fileName")
-            else -> null
-        }
-    }
 
     private fun buildPatchManifest(
         ini: FnisIni,
@@ -277,7 +223,4 @@ class FnisGeneratorService(private val context: Context) {
 
     private fun timestamp(): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(Date())
-
-    private fun fileTimestamp(): String =
-        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ROOT).format(Date())
 }

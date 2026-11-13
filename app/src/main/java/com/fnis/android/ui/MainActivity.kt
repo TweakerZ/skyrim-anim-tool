@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -29,6 +30,7 @@ import com.fnis.android.service.FnisGeneratorService
 import com.fnis.android.service.TemplateProcessor
 import com.google.android.material.button.MaterialButton
 import java.io.File
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -57,6 +59,7 @@ class MainActivity : AppCompatActivity() {
     private var currentIni: FnisIni? = null
     private var loadedPath: String? = null
     private var suppressOptionCallbacks = false
+    private var pendingZip: File? = null
 
     private val folderLauncher = registerForActivityResult(OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -68,6 +71,18 @@ class MainActivity : AppCompatActivity() {
             } else {
                 applyFolder(folder)
             }
+        }
+    }
+
+    private val zipLauncher = registerForActivityResult(CreateDocument("application/zip")) { uri ->
+        if (uri == null) {
+            pendingZip?.delete()
+            pendingZip = null
+            btnExport.isEnabled = true
+            tvStatus.text = getString(R.string.status_ready)
+            logMessage(getString(R.string.msg_zip_cancelled))
+        } else {
+            saveZip(uri)
         }
     }
 
@@ -139,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnExport.setOnClickListener {
-            exportFiles()
+            createModZip()
         }
 
         cbPscd.setOnCheckedChangeListener { _, isChecked ->
@@ -332,7 +347,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         val ini = currentIni ?: FnisDataRepository.ini
+        pendingZip?.delete()
+        pendingZip = null
         btnGenerate.isEnabled = false
+        btnExport.isEnabled = false
         btnGenerate.text = getString(R.string.status_generating)
         progressGenerate.visibility = View.VISIBLE
         tvStatus.text = getString(R.string.status_generating)
@@ -412,51 +430,90 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun exportFiles() {
+    /**
+     * Packs the last generation into a mod archive, then lets the user pick
+     * where to save it. A mod loader installs the archive like any other mod,
+     * so the Skyrim Data folder is no longer written to directly.
+     */
+    private fun createModZip() {
         val outputDir = service.getOutputDir()
         if (!outputDir.exists() || outputDir.listFiles()?.isEmpty() == true) {
             logMessage(getString(R.string.msg_no_export_files))
             return
         }
 
-        val dataDir = selectedFolder ?: return
-
-        AlertDialog.Builder(this)
-            .setTitle(R.string.export_dialog_title)
-            .setMessage(getString(R.string.export_dialog_message, dataDir.absolutePath))
-            .setPositiveButton(R.string.export_confirm) { _, _ -> performExport(dataDir) }
-            .setNegativeButton(R.string.dialog_cancel, null)
-            .show()
-    }
-
-    private fun performExport(dataDir: File) {
         btnExport.isEnabled = false
-        tvStatus.text = getString(R.string.status_exporting)
-        tvSummary.text = dataDir.absolutePath
+        tvStatus.text = getString(R.string.status_building_zip)
+        tvSummary.text = ""
 
         Thread {
-            val result = service.exportToData(dataDir)
-            Handler(Looper.getMainLooper()).post {
-                if (isFinishing || isDestroyed) return@post
-                btnExport.isEnabled = true
-                if (result.errors.isEmpty()) {
-                    tvStatus.text = getString(R.string.status_complete)
-                    tvSummary.text = getString(
-                        R.string.label_exported_count,
-                        result.copied.size
-                    )
-                    logMessage(getString(R.string.msg_export_complete))
-                    result.copied.forEach { path -> logMessage(getString(R.string.label_exported_file, path)) }
+            try {
+                val result = service.buildModZip()
+                Handler(Looper.getMainLooper()).post {
+                    if (isFinishing || isDestroyed) return@post
+                    pendingZip = result.file
+                    tvStatus.text = getString(R.string.status_choose_zip_location)
+                    result.entries.forEach { entry ->
+                        logMessage(getString(R.string.label_zip_entry, entry))
+                    }
                     if (result.skipped.isNotEmpty()) {
-                        logMessage(getString(R.string.msg_export_skipped, result.skipped.joinToString(", ")))
+                        logMessage(
+                            getString(
+                                R.string.msg_zip_skipped,
+                                result.skipped.joinToString(", ")
+                            )
+                        )
                     }
-                    if (result.behaviorsSkipped > 0) {
-                        logMessage(getString(R.string.msg_export_behaviors_untouched, result.behaviorsSkipped))
+                    try {
+                        zipLauncher.launch(service.suggestedZipName())
+                    } catch (e: Exception) {
+                        pendingZip?.delete()
+                        pendingZip = null
+                        btnExport.isEnabled = true
+                        tvStatus.text = getString(R.string.status_error)
+                        logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
                     }
-                } else {
+                }
+            } catch (e: Throwable) {
+                Handler(Looper.getMainLooper()).post {
+                    if (isFinishing || isDestroyed) return@post
+                    btnExport.isEnabled = true
                     tvStatus.text = getString(R.string.status_error)
-                    tvSummary.text = result.errors.first()
-                    logMessage(getString(R.string.msg_export_failed, result.errors.first()))
+                    tvSummary.text = e.message ?: ""
+                    logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
+                }
+            }
+        }.start()
+    }
+
+    private fun saveZip(uri: Uri) {
+        val zip = pendingZip ?: return
+        tvStatus.text = getString(R.string.status_saving_zip)
+        tvSummary.text = uri.toString()
+
+        Thread {
+            try {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    zip.inputStream().use { input -> input.copyTo(out) }
+                } ?: throw IOException("The selected location could not be opened")
+
+                Handler(Looper.getMainLooper()).post {
+                    if (isFinishing || isDestroyed) return@post
+                    btnExport.isEnabled = true
+                    tvStatus.text = getString(R.string.status_complete)
+                    tvSummary.text = getString(R.string.label_zip_saved)
+                    logMessage(getString(R.string.msg_zip_saved, uri.toString()))
+                    logMessage(getString(R.string.msg_zip_install))
+                    zip.delete()
+                    pendingZip = null
+                }
+            } catch (e: Throwable) {
+                Handler(Looper.getMainLooper()).post {
+                    if (isFinishing || isDestroyed) return@post
+                    btnExport.isEnabled = true
+                    tvStatus.text = getString(R.string.status_error)
+                    tvSummary.text = e.message ?: ""
+                    logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
                 }
             }
         }.start()
@@ -510,7 +567,13 @@ class MainActivity : AppCompatActivity() {
         val current = tvLogContent.text?.toString().orEmpty()
         val base = if (current == getString(R.string.logs_empty)) "" else current
         tvLogContent.text = base + message + "\n"
-        scrollLog.post { scrollLog.fullScroll(View.FOCUS_DOWN) }
+        // Scroll only the log box. fullScroll(FOCUS_DOWN) moves focus into the
+        // selectable log text, and the outer ScrollView then scrolls the whole
+        // page down to reveal that focused view.
+        scrollLog.post {
+            val content = scrollLog.getChildAt(0) ?: return@post
+            scrollLog.scrollTo(0, maxOf(0, content.height - scrollLog.height))
+        }
     }
 
     private fun logMessage(message: String) {
@@ -519,6 +582,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearLog() {
         tvLogContent.text = getString(R.string.logs_empty)
-        scrollLog.post { scrollLog.fullScroll(View.FOCUS_UP) }
+        scrollLog.post { scrollLog.scrollTo(0, 0) }
     }
 }

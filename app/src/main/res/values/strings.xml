@@ -31,26 +31,29 @@
 
     <!-- Actions and status -->
     <string name="btn_generate">Generate Behavior Files</string>
-    <string name="btn_export">Export to Skyrim Data</string>
+    <string name="btn_export">Create Mod Zip</string>
     <string name="summary_empty">Waiting for a Skyrim Data folder.</string>
     <string name="status_ready">Ready.</string>
     <string name="status_loading">Loading FNIS data…</string>
     <string name="status_waiting_access">Waiting for all-files access.</string>
     <string name="status_generating">Generating behavior files…</string>
     <string name="status_generating_file">Generating %1$s…</string>
-    <string name="status_exporting">Exporting to Skyrim Data…</string>
+    <string name="status_building_zip">Building mod archive…</string>
+    <string name="status_choose_zip_location">Choose where to save the mod archive.</string>
+    <string name="status_saving_zip">Saving mod archive…</string>
     <string name="status_complete">Generation complete.</string>
     <string name="status_error">Something went wrong</string>
     <string name="msg_no_data_folder">Please select your Skyrim Data folder first</string>
     <string name="msg_generation_complete">Generation finished</string>
-    <string name="msg_export_complete">Files exported to Skyrim Data folder</string>
-    <string name="msg_export_skipped">Left untouched (not verified): %1$s</string>
-    <string name="msg_export_behaviors_untouched">Left untouched: %1$d behavior file(s). Generated behaviors are not installed because they are not yet identical to FNIS output.</string>
-    <string name="msg_no_export_files">No files to export. Generate first.</string>
+    <string name="msg_zip_saved">Mod archive saved: %1$s</string>
+    <string name="msg_zip_install">Install the archive with your mod loader, then let it deploy the files.</string>
+    <string name="msg_zip_cancelled">Save cancelled. The archive was discarded.</string>
+    <string name="msg_zip_failed">Could not create the mod archive: %1$s</string>
+    <string name="msg_zip_skipped">Not packed: %1$s</string>
+    <string name="msg_no_export_files">No files to package. Generate first.</string>
     <string name="msg_skipping_patches">Skipping %1$d disabled patch(es): %2$s</string>
     <string name="msg_no_fnis_data">No FNIS data loaded yet. Select the Skyrim Data folder first.</string>
-    <string name="msg_generation_kept_in_app">Files are kept in app storage. Nothing was written to the Skyrim Data folder; use Export when you want to copy the generated files.</string>
-    <string name="msg_export_failed">Export failed: %1$s</string>
+    <string name="msg_generation_kept_in_app">Files are kept in app storage. Use Create Mod Zip when you want to package them for your mod loader.</string>
     <string name="msg_warning">Warning: %1$s</string>
     <string name="msg_data_folder">Data folder: %1$s</string>
     <string name="msg_folder_missing">Folder does not exist: %1$s</string>
@@ -58,15 +61,10 @@
     <string name="msg_data_loaded">FNIS data loaded from %1$s</string>
     <string name="msg_ini_write_failed">Could not write FNIS.ini: %1$s</string>
     <string name="label_generated_file">Generated: %1$s</string>
-    <string name="label_exported_file">Exported: %1$s</string>
-    <string name="label_generated_count">%1$d file(s) generated · press Export to copy to Skyrim Data</string>
+    <string name="label_zip_entry">Packed: %1$s</string>
+    <string name="label_generated_count">%1$d file(s) generated · press Create Mod Zip to package them</string>
     <string name="label_generated_skipped">%1$d behavior file(s) skipped: incomplete graph. Existing behaviors were left untouched to avoid a T-pose.</string>
-    <string name="label_exported_count">%1$d file(s) exported</string>
-
-    <!-- Export confirmation -->
-    <string name="export_dialog_title">Export generated files?</string>
-    <string name="export_dialog_message">This copies the verified generated files into:\n\n%1$s\n\nOnly scripts and the patch report are installed. Behavior .hkx files and animation data files are left untouched: generated behaviors are not yet identical to FNIS output, and a wrong behavior or animation data file crashes Skyrim on load. The mod\'s working files stay in place, so the game keeps booting.</string>
-    <string name="export_confirm">Export</string>
+    <string name="label_zip_saved">Mod archive saved</string>
 
     <!-- Patches -->
     <string name="title_patches">Patches</string>

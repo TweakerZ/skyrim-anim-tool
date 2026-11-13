@@ -6,8 +6,9 @@ for Skyrim Legendary Edition running on the static Android port through
 
 The app reads the FNIS files inside your Skyrim `Data` folder, shows the
 generation options and the patches, and writes your choices back to
-`Data/FNIS.ini`. It can also run the FNIS template pass and export the
-generated scripts and patch report into `Data`.
+`Data/FNIS.ini`. It can also run the FNIS template pass and package the
+generated scripts and patch report as a mod zip you save anywhere in storage
+and install with Skyrim Mod Loader.
 
 ## What it does
 
@@ -19,21 +20,23 @@ generated scripts and patch report into `Data`.
   restart.
 - Writes the active options (PSCD, Instant Execute, Load CTD Calculation) to
   `Data/FNIS.ini`.
-- Generates the FNIS scripts and `FNIS_Patches.txt`, and backs up any file it
-  replaces under
-  `Data/tools/GenerateFNIS_for_Users/temporary_logs/backup_<timestamp>/`.
+- Generates the FNIS scripts and `FNIS_Patches.txt`, then packs them into a mod
+  zip with Data-relative paths (`scripts/...`,
+  `tools/GenerateFNIS_for_Users/...`). The zip is saved wherever you choose and
+  installed through your mod loader, so the app never writes into `Data`
+  itself.
 
 ## What it does not do yet
 
-Behavior and animation data files are generated in app storage but not
-exported. The template engine does not reproduce FNIS output closely enough:
-generated behavior graphs still contain unresolved references, and the
-animation data record layout is not exact. Writing those files over working
+Behavior and animation data files are generated in app storage but not packed
+into the mod zip. The template engine does not reproduce FNIS output closely
+enough: generated behavior graphs still contain unresolved references, and the
+animation data record layout is not exact. Installing those files over working
 ones T-poses the character or crashes Skyrim on the first frame. The app keeps
 the mod's behavior and animation data files untouched and reports what it
 skipped in the log.
 
-So the app currently installs scripts and the patch report, not new behaviors.
+So the zip currently installs scripts and the patch report, not new behaviors.
 Full behavior parity is the remaining work.
 
 ## Requirements
@@ -84,5 +87,5 @@ them the release build is unsigned.
 ## Disclaimer
 
 AI was used in building this. The code and APKs are provided as-is, with no
-warranty. Back up your `Data` folder before exporting, and test on a save you
-can lose.
+warranty. Back up your `Data` folder before installing the generated mod, and
+test on a save you can lose.
