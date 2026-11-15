@@ -6,29 +6,25 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
-import android.view.LayoutInflater
-import android.view.View
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.fnis.android.R
 import com.fnis.android.data.FnisDataRepository
 import com.fnis.android.data.FnisSettings
 import com.fnis.android.data.IniWriter
 import com.fnis.android.data.StoragePaths
 import com.fnis.android.model.FnisIni
-import com.fnis.android.model.PatchDefinition
 import com.fnis.android.service.FnisGeneratorService
 import com.fnis.android.service.TemplateProcessor
-import com.google.android.material.button.MaterialButton
+import com.skyrimsuite.ui.theme.SkyrimSuiteTheme
 import java.io.File
 import java.io.IOException
 
@@ -37,29 +33,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var service: FnisGeneratorService
     private lateinit var settings: FnisSettings
 
-    private lateinit var tvFolderPath: TextView
-    private lateinit var tvStorageStatus: TextView
-    private lateinit var btnGrantStorage: MaterialButton
-    private lateinit var cbPscd: CheckBox
-    private lateinit var cbInstant: CheckBox
-    private lateinit var cbCtd: CheckBox
-    private lateinit var btnGenerate: MaterialButton
-    private lateinit var btnExport: MaterialButton
-    private lateinit var btnSelectFolder: MaterialButton
-    private lateinit var progressGenerate: ProgressBar
-    private lateinit var tvStatus: TextView
-    private lateinit var tvSummary: TextView
-    private lateinit var listPatches: LinearLayout
-    private lateinit var tvPatchCount: TextView
-    private lateinit var layoutEmptyPatches: View
-    private lateinit var tvLogContent: TextView
-    private lateinit var scrollLog: ScrollView
+    /* Compose-observed state */
+    private var folderPath by mutableStateOf<String?>(null)
+    private var storageGranted by mutableStateOf(false)
+    private var statusText by mutableStateOf("")
+    private var summaryText by mutableStateOf("")
+    private var patches by mutableStateOf<List<PatchUi>>(emptyList())
+    private var pscd by mutableStateOf(false)
+    private var instantExecute by mutableStateOf(false)
+    private var ctdCalculation by mutableStateOf(false)
+    private var busy by mutableStateOf(false)
+    private var logText by mutableStateOf("")
 
+    /* Local state */
     private var selectedFolder: File? = null
     private var currentIni: FnisIni? = null
     private var loadedPath: String? = null
-    private var suppressOptionCallbacks = false
     private var pendingZip: File? = null
+    private val logBuffer = StringBuilder()
 
     private val folderLauncher = registerForActivityResult(OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -78,8 +69,7 @@ class MainActivity : AppCompatActivity() {
         if (uri == null) {
             pendingZip?.delete()
             pendingZip = null
-            btnExport.isEnabled = true
-            tvStatus.text = getString(R.string.status_ready)
+            statusText = getString(R.string.status_ready)
             logMessage(getString(R.string.msg_zip_cancelled))
         } else {
             saveZip(uri)
@@ -88,14 +78,58 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
         service = FnisGeneratorService(this)
         service.initialize()
         settings = FnisSettings(this)
 
-        bindViews()
-        setupListeners()
+        readPreferences()
+
+        setContent {
+            SkyrimSuiteTheme {
+                FnisScreen(
+                    folderPath = folderPath,
+                    storageGranted = storageGranted,
+                    statusText = statusText,
+                    summaryText = summaryText,
+                    patches = patches,
+                    pscd = pscd,
+                    instantExecute = instantExecute,
+                    ctdCalculation = ctdCalculation,
+                    busy = busy,
+                    logText = logText,
+                    onPickFolder = { openFolderPicker() },
+                    onGrantStorage = { StoragePaths.requestAllFilesAccess(this) },
+                    onPscdChange = { checked ->
+                        pscd = checked
+                        currentIni = (currentIni ?: FnisIni()).copy(pscd = checked)
+                        settings.pscd = checked
+                        persistIni()
+                    },
+                    onInstantChange = { checked ->
+                        instantExecute = checked
+                        currentIni = (currentIni ?: FnisIni()).copy(instantExecute = checked)
+                        settings.instantExecute = checked
+                        persistIni()
+                    },
+                    onCtdChange = { checked ->
+                        ctdCalculation = checked
+                        currentIni = (currentIni ?: FnisIni()).copy(loadCtdCalculation = checked)
+                        settings.loadCtdCalculation = checked
+                        persistIni()
+                    },
+                    onTogglePatch = { id, enabled ->
+                        settings.setPatchEnabled(id, enabled)
+                        patches = patches.map {
+                            if (it.id == id) it.copy(enabled = enabled) else it
+                        }
+                    },
+                    onGenerate = { runGeneration() },
+                    onExport = { createModZip() },
+                    onClearLog = { clearLog() }
+                )
+            }
+        }
 
         updateUiState()
         restoreSavedFolder()
@@ -111,82 +145,20 @@ class MainActivity : AppCompatActivity() {
         val folder = File(saved)
         if (folder.isDirectory) {
             selectedFolder = folder
-            tvFolderPath.text = folder.absolutePath
+            folderPath = folder.absolutePath
             loadData(folder)
         }
     }
 
-    private fun bindViews() {
-        tvFolderPath = findViewById(R.id.tv_data_folder_path)
-        tvStorageStatus = findViewById(R.id.tv_storage_status)
-        btnGrantStorage = findViewById(R.id.btn_grant_storage)
-        cbPscd = findViewById(R.id.cb_pscd)
-        cbInstant = findViewById(R.id.cb_instant)
-        cbCtd = findViewById(R.id.cb_ctd)
-        btnGenerate = findViewById(R.id.btn_generate)
-        btnExport = findViewById(R.id.btn_export)
-        btnSelectFolder = findViewById(R.id.btn_select_data_folder)
-        progressGenerate = findViewById(R.id.progress_generate)
-        tvStatus = findViewById(R.id.tv_status)
-        tvSummary = findViewById(R.id.tv_summary)
-        listPatches = findViewById(R.id.list_patches)
-        tvPatchCount = findViewById(R.id.tv_patch_count)
-        layoutEmptyPatches = findViewById(R.id.layout_empty_patches)
-        tvLogContent = findViewById(R.id.tv_log_content)
-        scrollLog = findViewById(R.id.scroll_log)
-    }
-
-    private fun setupListeners() {
-        btnGrantStorage.setOnClickListener {
-            StoragePaths.requestAllFilesAccess(this)
-        }
-
-        btnSelectFolder.setOnClickListener {
-            openFolderPicker()
-        }
-
-        btnGenerate.setOnClickListener {
-            if (selectedFolder == null) {
-                tvFolderPath.error = getString(R.string.msg_no_data_folder)
-                return@setOnClickListener
-            }
-            runGeneration()
-        }
-
-        btnExport.setOnClickListener {
-            createModZip()
-        }
-
-        cbPscd.setOnCheckedChangeListener { _, isChecked ->
-            if (suppressOptionCallbacks) return@setOnCheckedChangeListener
-            currentIni = (currentIni ?: FnisIni()).copy(pscd = isChecked)
-            settings.pscd = isChecked
-            persistIni()
-        }
-        cbInstant.setOnCheckedChangeListener { _, isChecked ->
-            if (suppressOptionCallbacks) return@setOnCheckedChangeListener
-            currentIni = (currentIni ?: FnisIni()).copy(instantExecute = isChecked)
-            settings.instantExecute = isChecked
-            persistIni()
-        }
-        cbCtd.setOnCheckedChangeListener { _, isChecked ->
-            if (suppressOptionCallbacks) return@setOnCheckedChangeListener
-            currentIni = (currentIni ?: FnisIni()).copy(loadCtdCalculation = isChecked)
-            settings.loadCtdCalculation = isChecked
-            persistIni()
-        }
-
-        findViewById<MaterialButton>(R.id.btn_clear_log).setOnClickListener {
-            clearLog()
-        }
+    private fun readPreferences() {
+        storageGranted = StoragePaths.hasAllFilesAccess(this)
+        pscd = settings.pscd ?: false
+        instantExecute = settings.instantExecute ?: false
+        ctdCalculation = settings.loadCtdCalculation ?: true
     }
 
     private fun refreshStorageStatus() {
-        val granted = StoragePaths.hasAllFilesAccess(this)
-        tvStorageStatus.text = getString(
-            if (granted) R.string.storage_granted else R.string.storage_missing
-        )
-        btnGrantStorage.visibility = if (granted) View.GONE else View.VISIBLE
+        storageGranted = StoragePaths.hasAllFilesAccess(this)
     }
 
     private fun persistPermission(uri: Uri) {
@@ -214,7 +186,7 @@ class MainActivity : AppCompatActivity() {
         val folder = File(saved)
         if (folder.isDirectory) {
             selectedFolder = folder
-            tvFolderPath.text = folder.absolutePath
+            folderPath = folder.absolutePath
             updateUiState()
         } else {
             settings.dataPath = null
@@ -236,14 +208,14 @@ class MainActivity : AppCompatActivity() {
 
         selectedFolder = dataDir
         settings.dataPath = dataDir.absolutePath
-        tvFolderPath.text = dataDir.absolutePath
-        tvFolderPath.error = null
+        folderPath = dataDir.absolutePath
         logMessage(getString(R.string.msg_data_folder, dataDir.absolutePath))
 
         if (!StoragePaths.hasAllFilesAccess(this)) {
+            storageGranted = false
             logMessage(getString(R.string.storage_missing))
-            tvStatus.text = getString(R.string.status_waiting_access)
-            tvSummary.text = getString(R.string.storage_missing)
+            statusText = getString(R.string.status_waiting_access)
+            summaryText = getString(R.string.storage_missing)
             StoragePaths.requestAllFilesAccess(this)
             updateUiState()
             return
@@ -254,9 +226,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadData(dir: File) {
-        tvStatus.text = getString(R.string.status_loading)
-        tvSummary.text = dir.absolutePath
-        progressGenerate.visibility = View.VISIBLE
+        statusText = getString(R.string.status_loading)
+        summaryText = dir.absolutePath
+        busy = true
 
         Thread {
             val report = try {
@@ -271,7 +243,7 @@ class MainActivity : AppCompatActivity() {
 
             Handler(Looper.getMainLooper()).post {
                 if (isFinishing || isDestroyed) return@post
-                progressGenerate.visibility = View.GONE
+                busy = false
                 report.lines.forEach { line -> logMessage(line) }
                 report.errors.forEach { line -> logMessage(getString(R.string.msg_warning, line)) }
 
@@ -283,13 +255,12 @@ class MainActivity : AppCompatActivity() {
                         instantExecute = settings.instantExecute ?: loadedIni.instantExecute,
                         loadCtdCalculation = settings.loadCtdCalculation ?: loadedIni.loadCtdCalculation
                     )
-                    suppressOptionCallbacks = true
-                    cbPscd.isChecked = currentIni?.pscd ?: false
-                    cbInstant.isChecked = currentIni?.instantExecute ?: false
-                    cbCtd.isChecked = currentIni?.loadCtdCalculation ?: true
-                    suppressOptionCallbacks = false
-                    tvStatus.text = getString(R.string.status_ready)
-                    tvSummary.text = buildString {
+                    pscd = currentIni?.pscd ?: false
+                    instantExecute = currentIni?.instantExecute ?: false
+                    ctdCalculation = currentIni?.loadCtdCalculation ?: true
+
+                    statusText = getString(R.string.status_ready)
+                    summaryText = buildString {
                         append(FnisDataRepository.patches.count { it.hidden == 0 && it.numBones == 0 })
                             .append(" patches · ")
                         append(FnisDataRepository.groups.size).append(" groups · ")
@@ -298,8 +269,8 @@ class MainActivity : AppCompatActivity() {
                     logMessage(getString(R.string.msg_data_loaded, dir.absolutePath))
                     loadPatches()
                 } else {
-                    tvStatus.text = getString(R.string.status_error)
-                    tvSummary.text = report.errors.firstOrNull() ?: getString(R.string.msg_no_data_folder)
+                    statusText = getString(R.string.status_error)
+                    summaryText = report.errors.firstOrNull() ?: getString(R.string.msg_no_data_folder)
                     loadPatches()
                 }
                 updateUiState()
@@ -308,40 +279,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadPatches() {
-        val patches = FnisDataRepository.patches.filter { it.hidden == 0 && it.numBones == 0 }
-        listPatches.removeAllViews()
-
-        val inflater = LayoutInflater.from(this)
-        for (patch in patches) {
-            val item = inflater.inflate(R.layout.item_patch, listPatches, false)
-            item.findViewById<TextView>(R.id.tv_patch_id).text = patch.patchId
-            item.findViewById<TextView>(R.id.tv_patch_description).text = patch.description
-            item.findViewById<TextView>(R.id.tv_patch_ctd).text =
-                getString(R.string.label_patch_ctd, patch.ctdContribution)
-
-            val cbEnabled = item.findViewById<CheckBox>(R.id.cb_patch_enabled)
-            cbEnabled.isChecked = settings.isPatchEnabled(patch.patchId)
-            cbEnabled.setOnCheckedChangeListener { _, isChecked ->
-                settings.setPatchEnabled(patch.patchId, isChecked)
-                updatePatchCount(patches)
+        patches = FnisDataRepository.patches
+            .filter { it.hidden == 0 && it.numBones == 0 }
+            .map { patch ->
+                PatchUi(
+                    id = patch.patchId,
+                    description = patch.description,
+                    ctd = patch.ctdContribution,
+                    enabled = settings.isPatchEnabled(patch.patchId)
+                )
             }
-            listPatches.addView(item)
-        }
-
-        updatePatchCount(patches)
-        layoutEmptyPatches.visibility = if (patches.isEmpty()) View.VISIBLE else View.GONE
-    }
-
-    private fun updatePatchCount(patches: List<PatchDefinition>) {
-        val enabled = patches.count { settings.isPatchEnabled(it.patchId) }
-        tvPatchCount.text = getString(R.string.label_patch_count, patches.size) +
-            " · " + getString(R.string.label_patch_enabled, enabled, patches.size)
     }
 
     private fun runGeneration() {
         if (!FnisDataRepository.loaded) {
-            tvStatus.text = getString(R.string.status_waiting_access)
-            tvSummary.text = getString(R.string.storage_missing)
+            statusText = getString(R.string.status_waiting_access)
+            summaryText = getString(R.string.storage_missing)
             logMessage(getString(R.string.msg_no_fnis_data))
             return
         }
@@ -349,22 +302,22 @@ class MainActivity : AppCompatActivity() {
         val ini = currentIni ?: FnisDataRepository.ini
         pendingZip?.delete()
         pendingZip = null
-        btnGenerate.isEnabled = false
-        btnExport.isEnabled = false
-        btnGenerate.text = getString(R.string.status_generating)
-        progressGenerate.visibility = View.VISIBLE
-        tvStatus.text = getString(R.string.status_generating)
-        tvSummary.text = ""
+        busy = true
+        statusText = getString(R.string.status_generating)
+        summaryText = ""
 
         val groups = FnisDataRepository.groups
         val selectablePatches = FnisDataRepository.patches.filter {
             it.hidden == 0 && it.numBones == 0
         }
-        val patches = selectablePatches.filter { settings.isPatchEnabled(it.patchId) }
+        val patchSelection = patches
+        val enabledIds = patchSelection.filter { it.enabled }.map { it.id }.toSet()
+        val selectedPatches = selectablePatches.filter { it.patchId in enabledIds }
         val disabledIds = selectablePatches
-            .filterNot { settings.isPatchEnabled(it.patchId) }
+            .filterNot { it.patchId in enabledIds }
             .map { it.patchId }
             .toSet()
+
         if (disabledIds.isNotEmpty()) {
             logMessage(
                 getString(
@@ -382,27 +335,24 @@ class MainActivity : AppCompatActivity() {
                     ini,
                     groups,
                     emptyList(),
-                    patches,
+                    selectedPatches,
                     processor,
                     disabledIds
                 ) { message ->
                     Handler(Looper.getMainLooper()).post {
                         if (isFinishing || isDestroyed) return@post
-                        tvStatus.text = message
+                        statusText = message
                     }
                 }
 
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
-                    btnGenerate.isEnabled = true
-                    btnGenerate.text = getString(R.string.btn_generate)
-                    btnExport.isEnabled = true
-                    progressGenerate.visibility = View.GONE
-                    tvStatus.text = getString(R.string.status_complete)
+                    busy = false
+                    statusText = getString(R.string.status_complete)
                     val skipped = generated.count {
                         it.contains("SKIPPED") || it.contains("CONVERSION FAILED")
                     }
-                    tvSummary.text = if (skipped > 0) {
+                    summaryText = if (skipped > 0) {
                         getString(R.string.label_generated_skipped, skipped)
                     } else {
                         getString(R.string.label_generated_count, generated.size)
@@ -416,14 +366,12 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Throwable) {
                 // Throwable, not Exception: an OutOfMemoryError on a large
-                // template would otherwise leave the button disabled forever.
+                // template would otherwise leave the screen busy forever.
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
-                    btnGenerate.isEnabled = true
-                    btnGenerate.text = getString(R.string.btn_generate)
-                    progressGenerate.visibility = View.GONE
-                    tvStatus.text = getString(R.string.status_error)
-                    tvSummary.text = e.message ?: ""
+                    busy = false
+                    statusText = getString(R.string.status_error)
+                    summaryText = e.message ?: ""
                     logMessage(getString(R.string.status_error) + ": " + e.message)
                 }
             }
@@ -442,17 +390,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        btnExport.isEnabled = false
-        tvStatus.text = getString(R.string.status_building_zip)
-        tvSummary.text = ""
+        busy = true
+        statusText = getString(R.string.status_building_zip)
+        summaryText = ""
 
         Thread {
             try {
                 val result = service.buildModZip()
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
+                    busy = false
                     pendingZip = result.file
-                    tvStatus.text = getString(R.string.status_choose_zip_location)
+                    statusText = getString(R.string.status_choose_zip_location)
                     result.entries.forEach { entry ->
                         logMessage(getString(R.string.label_zip_entry, entry))
                     }
@@ -469,17 +418,16 @@ class MainActivity : AppCompatActivity() {
                     } catch (e: Exception) {
                         pendingZip?.delete()
                         pendingZip = null
-                        btnExport.isEnabled = true
-                        tvStatus.text = getString(R.string.status_error)
+                        statusText = getString(R.string.status_error)
                         logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
                     }
                 }
             } catch (e: Throwable) {
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
-                    btnExport.isEnabled = true
-                    tvStatus.text = getString(R.string.status_error)
-                    tvSummary.text = e.message ?: ""
+                    busy = false
+                    statusText = getString(R.string.status_error)
+                    summaryText = e.message ?: ""
                     logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
                 }
             }
@@ -488,8 +436,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveZip(uri: Uri) {
         val zip = pendingZip ?: return
-        tvStatus.text = getString(R.string.status_saving_zip)
-        tvSummary.text = uri.toString()
+        statusText = getString(R.string.status_saving_zip)
+        summaryText = uri.toString()
 
         Thread {
             try {
@@ -499,9 +447,8 @@ class MainActivity : AppCompatActivity() {
 
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
-                    btnExport.isEnabled = true
-                    tvStatus.text = getString(R.string.status_complete)
-                    tvSummary.text = getString(R.string.label_zip_saved)
+                    statusText = getString(R.string.status_complete)
+                    summaryText = getString(R.string.label_zip_saved)
                     logMessage(getString(R.string.msg_zip_saved, uri.toString()))
                     logMessage(getString(R.string.msg_zip_install))
                     zip.delete()
@@ -510,9 +457,8 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Throwable) {
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
-                    btnExport.isEnabled = true
-                    tvStatus.text = getString(R.string.status_error)
-                    tvSummary.text = e.message ?: ""
+                    statusText = getString(R.string.status_error)
+                    summaryText = e.message ?: ""
                     logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
                 }
             }
@@ -556,32 +502,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUiState() {
         val hasFolder = selectedFolder != null
-        btnGenerate.isEnabled = hasFolder
         if (!hasFolder) {
-            tvStatus.text = getString(R.string.status_ready)
-            tvSummary.text = getString(R.string.summary_empty)
-        }
-    }
-
-    private fun appendLog(message: String) {
-        val current = tvLogContent.text?.toString().orEmpty()
-        val base = if (current == getString(R.string.logs_empty)) "" else current
-        tvLogContent.text = base + message + "\n"
-        // Scroll only the log box. fullScroll(FOCUS_DOWN) moves focus into the
-        // selectable log text, and the outer ScrollView then scrolls the whole
-        // page down to reveal that focused view.
-        scrollLog.post {
-            val content = scrollLog.getChildAt(0) ?: return@post
-            scrollLog.scrollTo(0, maxOf(0, content.height - scrollLog.height))
+            statusText = getString(R.string.status_ready)
+            summaryText = getString(R.string.summary_empty)
         }
     }
 
     private fun logMessage(message: String) {
-        appendLog(message)
+        logBuffer.append(message).append('\n')
+        logText = logBuffer.toString()
     }
 
     private fun clearLog() {
-        tvLogContent.text = getString(R.string.logs_empty)
-        scrollLog.post { scrollLog.scrollTo(0, 0) }
+        logBuffer.setLength(0)
+        logText = ""
     }
 }

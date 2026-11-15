@@ -76,6 +76,9 @@
     <string name="empty_no_patches">No patches loaded</string>
     <string name="empty_patches_hint">Select a Skyrim Data folder that contains tools/GenerateFNIS_for_Users/PatchList.txt.</string>
 
+    <!-- Settings -->
+    <string name="settings_title">Advanced settings</string>
+
     <!-- Log -->
     <string name="title_log">Generation Log</string>
     <string name="log_hint">Output from the current session.</string>
