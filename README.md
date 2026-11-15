@@ -7,8 +7,8 @@ for Skyrim Legendary Edition running on the static Android port through
 The app reads the FNIS files inside your Skyrim `Data` folder, shows the
 generation options and the patches, and writes your choices back to
 `Data/FNIS.ini`. It can also run the FNIS template pass and package the
-generated scripts and patch report as a mod zip you save anywhere in storage
-and install with Skyrim Mod Loader.
+generated scripts and patch report as `Skyrim Anim.zip` in a mod output folder
+you pick, then install it with Skyrim Mod Loader.
 
 ## What it does
 
@@ -22,9 +22,10 @@ and install with Skyrim Mod Loader.
   `Data/FNIS.ini`.
 - Generates the FNIS scripts and `FNIS_Patches.txt`, then packs them into a mod
   zip with Data-relative paths (`scripts/...`,
-  `tools/GenerateFNIS_for_Users/...`). The zip is saved wherever you choose and
-  installed through your mod loader, so the app never writes into `Data`
-  itself.
+  `tools/GenerateFNIS_for_Users/...`). The zip is always named
+  `Skyrim Anim.zip` and is written into the mod output folder chosen in
+  settings, so a mod manager sees the same file on every build and the app
+  never writes into `Data` itself.
 
 ## What it does not do yet
 

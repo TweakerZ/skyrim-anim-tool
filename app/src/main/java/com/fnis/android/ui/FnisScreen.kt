@@ -43,6 +43,7 @@ fun FnisScreen(
     storageGranted: Boolean,
     statusText: String,
     summaryText: String,
+    zipOutputPath: String?,
     patches: List<PatchUi>,
     pscd: Boolean,
     instantExecute: Boolean,
@@ -50,6 +51,7 @@ fun FnisScreen(
     busy: Boolean,
     logText: String,
     onPickFolder: () -> Unit,
+    onPickZipOutput: () -> Unit,
     onGrantStorage: () -> Unit,
     onPscdChange: (Boolean) -> Unit,
     onInstantChange: (Boolean) -> Unit,
@@ -204,6 +206,13 @@ fun FnisScreen(
             path = folderPath,
             onChange = onPickFolder,
             supportingText = stringResource(R.string.hint_data_folder)
+        )
+
+        SuitePathRow(
+            title = stringResource(R.string.label_zip_output),
+            path = zipOutputPath,
+            onChange = onPickZipOutput,
+            supportingText = stringResource(R.string.hint_zip_output)
         )
 
         if (!storageGranted) {

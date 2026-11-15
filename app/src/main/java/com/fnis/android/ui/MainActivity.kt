@@ -9,7 +9,6 @@ import android.text.InputType
 import android.widget.EditText
 import android.widget.FrameLayout
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -26,7 +25,6 @@ import com.fnis.android.service.FnisGeneratorService
 import com.fnis.android.service.TemplateProcessor
 import com.skyrimsuite.ui.theme.SkyrimSuiteTheme
 import java.io.File
-import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -44,35 +42,29 @@ class MainActivity : AppCompatActivity() {
     private var ctdCalculation by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var logText by mutableStateOf("")
+    private var zipOutputPath by mutableStateOf<String?>(null)
 
     /* Local state */
     private var selectedFolder: File? = null
     private var currentIni: FnisIni? = null
     private var loadedPath: String? = null
-    private var pendingZip: File? = null
     private val logBuffer = StringBuilder()
 
-    private val folderLauncher = registerForActivityResult(OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            persistPermission(uri)
-            val folder = StoragePaths.resolve(this, uri)
-            if (folder == null) {
-                logMessage(getString(R.string.msg_path_unresolved))
-                promptForPath("/storage/emulated/0/")
-            } else {
-                applyFolder(folder)
-            }
-        }
-    }
+    private enum class PickTarget { DATA, ZIP_OUTPUT }
 
-    private val zipLauncher = registerForActivityResult(CreateDocument("application/zip")) { uri ->
-        if (uri == null) {
-            pendingZip?.delete()
-            pendingZip = null
-            statusText = getString(R.string.status_ready)
-            logMessage(getString(R.string.msg_zip_cancelled))
+    private var pendingPick: PickTarget? = null
+
+    private val directoryPicker = registerForActivityResult(OpenDocumentTree()) { uri ->
+        val target = pendingPick ?: return@registerForActivityResult
+        pendingPick = null
+        if (uri == null) return@registerForActivityResult
+        persistPermission(uri)
+        val folder = StoragePaths.resolve(this, uri)
+        if (folder == null) {
+            logMessage(getString(R.string.msg_path_unresolved))
+            promptForPath(target, "/storage/emulated/0/")
         } else {
-            saveZip(uri)
+            applyPath(target, folder)
         }
     }
 
@@ -98,7 +90,9 @@ class MainActivity : AppCompatActivity() {
                     ctdCalculation = ctdCalculation,
                     busy = busy,
                     logText = logText,
-                    onPickFolder = { openFolderPicker() },
+                    zipOutputPath = zipOutputPath,
+                    onPickFolder = { pickDirectory(PickTarget.DATA) },
+                    onPickZipOutput = { pickDirectory(PickTarget.ZIP_OUTPUT) },
                     onGrantStorage = { StoragePaths.requestAllFilesAccess(this) },
                     onPscdChange = { checked ->
                         pscd = checked
@@ -155,6 +149,7 @@ class MainActivity : AppCompatActivity() {
         pscd = settings.pscd ?: false
         instantExecute = settings.instantExecute ?: false
         ctdCalculation = settings.loadCtdCalculation ?: true
+        zipOutputPath = settings.zipOutputPath
     }
 
     private fun refreshStorageStatus() {
@@ -172,12 +167,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openFolderPicker() {
+    private fun pickDirectory(target: PickTarget) {
         try {
-            folderLauncher.launch(null)
+            pendingPick = target
+            directoryPicker.launch(null)
         } catch (e: Exception) {
+            pendingPick = null
             logMessage(getString(R.string.msg_picker_failed, e.message.orEmpty()))
-            promptForPath("/storage/emulated/0/")
+            promptForPath(target, "/storage/emulated/0/")
+        }
+    }
+
+    private fun applyPath(target: PickTarget, picked: File) {
+        when (target) {
+            PickTarget.DATA -> applyDataFolder(picked)
+            PickTarget.ZIP_OUTPUT -> applyZipOutputFolder(picked)
         }
     }
 
@@ -193,7 +197,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyFolder(picked: File) {
+    private fun applyDataFolder(picked: File) {
         if (!picked.isDirectory) {
             logMessage(getString(R.string.msg_folder_missing, picked.path))
             return
@@ -223,6 +227,27 @@ class MainActivity : AppCompatActivity() {
 
         loadData(dataDir)
         updateUiState()
+    }
+
+    /**
+     * The zip output folder is written to by real filesystem path, so it needs
+     * the same all-files access the Data folder does.
+     */
+    private fun applyZipOutputFolder(picked: File) {
+        if (!picked.isDirectory) {
+            logMessage(getString(R.string.msg_folder_missing, picked.path))
+            return
+        }
+
+        zipOutputPath = picked.absolutePath
+        settings.zipOutputPath = picked.absolutePath
+        logMessage(getString(R.string.msg_zip_output_folder, picked.absolutePath))
+
+        if (!StoragePaths.hasAllFilesAccess(this)) {
+            storageGranted = false
+            logMessage(getString(R.string.storage_missing))
+            StoragePaths.requestAllFilesAccess(this)
+        }
     }
 
     private fun loadData(dir: File) {
@@ -300,8 +325,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         val ini = currentIni ?: FnisDataRepository.ini
-        pendingZip?.delete()
-        pendingZip = null
         busy = true
         statusText = getString(R.string.status_generating)
         summaryText = ""
@@ -379,11 +402,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Packs the last generation into a mod archive, then lets the user pick
-     * where to save it. A mod loader installs the archive like any other mod,
-     * so the Skyrim Data folder is no longer written to directly.
+     * Packs the last generation into a fixed-name mod archive inside the
+     * selected output folder. A mod loader installs the archive like any other
+     * mod, so the Skyrim Data folder is never written to directly.
      */
     private fun createModZip() {
+        val targetDir = zipOutputPath?.let(::File)
+        if (targetDir == null || !targetDir.isDirectory) {
+            logMessage(getString(R.string.msg_zip_output_missing))
+            pickDirectory(PickTarget.ZIP_OUTPUT)
+            return
+        }
+
         val outputDir = service.getOutputDir()
         if (!outputDir.exists() || outputDir.listFiles()?.isEmpty() == true) {
             logMessage(getString(R.string.msg_no_export_files))
@@ -392,16 +422,16 @@ class MainActivity : AppCompatActivity() {
 
         busy = true
         statusText = getString(R.string.status_building_zip)
-        summaryText = ""
+        summaryText = targetDir.absolutePath
 
         Thread {
             try {
-                val result = service.buildModZip()
+                val result = service.buildModZip(targetDir)
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
                     busy = false
-                    pendingZip = result.file
-                    statusText = getString(R.string.status_choose_zip_location)
+                    statusText = getString(R.string.status_complete)
+                    summaryText = getString(R.string.label_zip_saved)
                     result.entries.forEach { entry ->
                         logMessage(getString(R.string.label_zip_entry, entry))
                     }
@@ -413,50 +443,13 @@ class MainActivity : AppCompatActivity() {
                             )
                         )
                     }
-                    try {
-                        zipLauncher.launch(service.suggestedZipName())
-                    } catch (e: Exception) {
-                        pendingZip?.delete()
-                        pendingZip = null
-                        statusText = getString(R.string.status_error)
-                        logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
-                    }
+                    logMessage(getString(R.string.msg_zip_saved, result.file.absolutePath))
+                    logMessage(getString(R.string.msg_zip_install))
                 }
             } catch (e: Throwable) {
                 Handler(Looper.getMainLooper()).post {
                     if (isFinishing || isDestroyed) return@post
                     busy = false
-                    statusText = getString(R.string.status_error)
-                    summaryText = e.message ?: ""
-                    logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
-                }
-            }
-        }.start()
-    }
-
-    private fun saveZip(uri: Uri) {
-        val zip = pendingZip ?: return
-        statusText = getString(R.string.status_saving_zip)
-        summaryText = uri.toString()
-
-        Thread {
-            try {
-                contentResolver.openOutputStream(uri)?.use { out ->
-                    zip.inputStream().use { input -> input.copyTo(out) }
-                } ?: throw IOException("The selected location could not be opened")
-
-                Handler(Looper.getMainLooper()).post {
-                    if (isFinishing || isDestroyed) return@post
-                    statusText = getString(R.string.status_complete)
-                    summaryText = getString(R.string.label_zip_saved)
-                    logMessage(getString(R.string.msg_zip_saved, uri.toString()))
-                    logMessage(getString(R.string.msg_zip_install))
-                    zip.delete()
-                    pendingZip = null
-                }
-            } catch (e: Throwable) {
-                Handler(Looper.getMainLooper()).post {
-                    if (isFinishing || isDestroyed) return@post
                     statusText = getString(R.string.status_error)
                     summaryText = e.message ?: ""
                     logMessage(getString(R.string.msg_zip_failed, e.message.orEmpty()))
@@ -475,7 +468,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun promptForPath(initial: String) {
+    private fun promptForPath(target: PickTarget, initial: String) {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(false)
@@ -494,7 +487,7 @@ class MainActivity : AppCompatActivity() {
             .setView(container)
             .setPositiveButton(R.string.dialog_ok) { _, _ ->
                 val path = input.text.toString().trim()
-                if (path.isNotEmpty()) applyFolder(File(path))
+                if (path.isNotEmpty()) applyPath(target, File(path))
             }
             .setNegativeButton(R.string.dialog_cancel, null)
             .show()

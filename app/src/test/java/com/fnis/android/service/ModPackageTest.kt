@@ -53,4 +53,10 @@ class ModPackageTest {
         assertTrue(result.entries.isEmpty())
         assertEquals(listOf("FNIS_aa2.pex"), result.skipped)
     }
+
+    @Test
+    fun usesFixedArchiveName() {
+        val outputDir = temporaryFolder.newFolder("mods")
+        assertEquals("Skyrim Anim.zip", ModPackage.targetFile(outputDir).name)
+    }
 }

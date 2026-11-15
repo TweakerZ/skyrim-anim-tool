@@ -18,11 +18,16 @@ import java.util.zip.ZipOutputStream
  */
 object ModPackage {
 
+    /** Fixed archive name so a mod manager sees the same mod on every build. */
+    const val FILE_NAME = "Skyrim Anim.zip"
+
     data class Result(
         val file: File,
         val entries: List<String>,
         val skipped: List<String>,
     )
+
+    fun targetFile(dir: File): File = File(dir, FILE_NAME)
 
     fun entryPath(fileName: String): String? = when {
         fileName.endsWith(".pex", ignoreCase = true) -> "scripts/$fileName"

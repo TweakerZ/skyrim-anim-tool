@@ -16,7 +16,6 @@ import java.util.Locale
 class FnisGeneratorService(private val context: Context) {
 
     private val outputDir = File(context.filesDir, "output")
-    private val zipDir = File(context.cacheDir, "mod-package")
 
     fun initialize(): Boolean {
         outputDir.mkdirs()
@@ -25,7 +24,6 @@ class FnisGeneratorService(private val context: Context) {
         // packed into a mod archive without a fresh Generate.
         outputDir.listFiles { file -> file.isFile && file.name.endsWith(".hkx", ignoreCase = true) }
             ?.forEach { it.delete() }
-        zipDir.deleteRecursively()
         return true
     }
 
@@ -124,36 +122,21 @@ class FnisGeneratorService(private val context: Context) {
     }
 
     /**
-     * Builds the mod archive from the last generation.
+     * Builds the mod archive from the last generation into [targetDir].
      *
      * The archive holds the verified generated files at Data-relative paths, so
-     * a mod loader can install it like any other mod. Behavior .hkx and
-     * animation data files are excluded: a behavior that passes the structural
-     * gate can still differ from the one the engine expects, and a wrong graph
-     * crashes Skyrim on the first frame.
+     * a mod loader can install it like any other mod. It always uses the fixed
+     * name in [ModPackage.FILE_NAME], so a mod manager sees the same file on
+     * every build. Behavior .hkx and animation data files are excluded: a
+     * behavior that passes the structural gate can still differ from the one
+     * the engine expects, and a wrong graph crashes Skyrim on the first frame.
      */
-    fun buildModZip(): ModPackage.Result {
+    fun buildModZip(targetDir: File): ModPackage.Result {
         outputDir.mkdirs()
-        val zip = File(zipDir, "Skyrim Anims.zip")
+        targetDir.mkdirs()
+        val zip = ModPackage.targetFile(targetDir)
         if (zip.isFile) zip.delete()
         return ModPackage.build(outputDir, zip)
-    }
-
-    /**
-     * Archive name proposed in the save dialog. The version makes it obvious
-     * which build a mod manager has installed.
-     */
-    fun suggestedZipName(): String {
-        val version = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        } catch (_: Exception) {
-            null
-        }
-        return if (version.isNullOrBlank()) {
-            "Skyrim Anims.zip"
-        } else {
-            "Skyrim Anims $version.zip"
-        }
     }
 
     fun writeOutput(fileName: String, content: String): File {

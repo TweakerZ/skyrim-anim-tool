@@ -6,6 +6,8 @@
     <!-- Data folder -->
     <string name="label_data_folder">Skyrim Data folder</string>
     <string name="hint_data_folder">The folder containing meshes/, scripts/, tools/, and FNIS.ini.</string>
+    <string name="label_zip_output">Mod zip output folder</string>
+    <string name="hint_zip_output">Where Skyrim Anim.zip is written. Point this at your mod manager\'s downloads or mods folder.</string>
     <string name="btn_select">Select</string>
     <string name="msg_not_selected">Not selected</string>
 
@@ -39,15 +41,14 @@
     <string name="status_generating">Generating behavior files…</string>
     <string name="status_generating_file">Generating %1$s…</string>
     <string name="status_building_zip">Building mod archive…</string>
-    <string name="status_choose_zip_location">Choose where to save the mod archive.</string>
-    <string name="status_saving_zip">Saving mod archive…</string>
     <string name="status_complete">Generation complete.</string>
     <string name="status_error">Something went wrong</string>
     <string name="msg_no_data_folder">Please select your Skyrim Data folder first</string>
     <string name="msg_generation_complete">Generation finished</string>
     <string name="msg_zip_saved">Mod archive saved: %1$s</string>
     <string name="msg_zip_install">Install the archive with your mod loader, then let it deploy the files.</string>
-    <string name="msg_zip_cancelled">Save cancelled. The archive was discarded.</string>
+    <string name="msg_zip_output_folder">Mod zip output folder: %1$s</string>
+    <string name="msg_zip_output_missing">Select a mod zip output folder first.</string>
     <string name="msg_zip_failed">Could not create the mod archive: %1$s</string>
     <string name="msg_zip_skipped">Not packed: %1$s</string>
     <string name="msg_no_export_files">No files to package. Generate first.</string>

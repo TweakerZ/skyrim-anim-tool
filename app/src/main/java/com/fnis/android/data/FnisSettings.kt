@@ -18,6 +18,14 @@ class FnisSettings(context: Context) {
             }.apply()
         }
 
+    var zipOutputPath: String?
+        get() = prefs.getString(KEY_ZIP_OUTPUT_PATH, null)
+        set(value) {
+            prefs.edit().apply {
+                if (value == null) remove(KEY_ZIP_OUTPUT_PATH) else putString(KEY_ZIP_OUTPUT_PATH, value)
+            }.apply()
+        }
+
     var pscd: Boolean?
         get() = boolOrNull(KEY_PSCD)
         set(value) = putBool(KEY_PSCD, value)
@@ -57,6 +65,7 @@ class FnisSettings(context: Context) {
     companion object {
         private const val PREFS = "fnis_prefs"
         private const val KEY_DATA_PATH = "data_path"
+        private const val KEY_ZIP_OUTPUT_PATH = "zip_output_path"
         private const val KEY_PSCD = "opt_pscd"
         private const val KEY_INSTANT = "opt_instant"
         private const val KEY_LOAD_CTD = "opt_load_ctd"
