@@ -16,7 +16,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.fnis.android"
+        applicationId = "com.skyrimandroid.animtool"
         minSdk = 24
         targetSdk = 34
         versionCode = 4

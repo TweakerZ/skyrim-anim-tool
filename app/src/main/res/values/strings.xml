@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Skyrim Anim Tool</string>
+    <string name="app_name">Anim Tool</string>
     <string name="app_subtitle">FNIS behavior generation for the Skyrim Android static port</string>
 
     <!-- Data folder -->
