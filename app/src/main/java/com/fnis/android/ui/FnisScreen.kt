@@ -28,6 +28,7 @@ import com.skyrimsuite.ui.SuitePermissionNotice
 import com.skyrimsuite.ui.SuiteScreen
 import com.skyrimsuite.ui.SuiteSectionHeader
 import com.skyrimsuite.ui.SuiteSettingsSheet
+import com.skyrimsuite.ui.SuiteTextInputDialog
 
 /** One row of PatchList.txt, projected for the UI. */
 data class PatchUi(
@@ -59,7 +60,11 @@ fun FnisScreen(
     onTogglePatch: (String, Boolean) -> Unit,
     onGenerate: () -> Unit,
     onExport: () -> Unit,
-    onClearLog: () -> Unit
+    onClearLog: () -> Unit,
+    pathPromptTitle: String?,
+    pathPromptInitial: String,
+    onPathPromptConfirm: (String) -> Unit,
+    onPathPromptDismiss: () -> Unit
 ) {
     var settingsVisible by rememberSaveable { mutableStateOf(false) }
     var logExpanded by rememberSaveable { mutableStateOf(true) }
@@ -232,6 +237,19 @@ fun FnisScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    if (pathPromptTitle != null) {
+        SuiteTextInputDialog(
+            title = pathPromptTitle,
+            body = stringResource(R.string.dialog_path_message),
+            initialValue = pathPromptInitial,
+            confirmLabel = stringResource(R.string.dialog_ok),
+            dismissLabel = stringResource(R.string.dialog_cancel),
+            hint = stringResource(R.string.dialog_path_hint),
+            onConfirm = onPathPromptConfirm,
+            onDismiss = onPathPromptDismiss
         )
     }
 }

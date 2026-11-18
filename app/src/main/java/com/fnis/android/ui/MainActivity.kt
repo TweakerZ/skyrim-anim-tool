@@ -5,12 +5,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.InputType
-import android.widget.EditText
-import android.widget.FrameLayout
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +39,8 @@ class MainActivity : AppCompatActivity() {
     private var busy by mutableStateOf(false)
     private var logText by mutableStateOf("")
     private var zipOutputPath by mutableStateOf<String?>(null)
+    private var pathPromptTarget by mutableStateOf<PickTarget?>(null)
+    private var pathPromptInitial by mutableStateOf("/storage/emulated/0/")
 
     /* Local state */
     private var selectedFolder: File? = null
@@ -62,7 +60,7 @@ class MainActivity : AppCompatActivity() {
         val folder = StoragePaths.resolve(this, uri)
         if (folder == null) {
             logMessage(getString(R.string.msg_path_unresolved))
-            promptForPath(target, "/storage/emulated/0/")
+            showPathPrompt(target)
         } else {
             applyPath(target, folder)
         }
@@ -120,7 +118,11 @@ class MainActivity : AppCompatActivity() {
                     },
                     onGenerate = { runGeneration() },
                     onExport = { createModZip() },
-                    onClearLog = { clearLog() }
+                    onClearLog = { clearLog() },
+                    pathPromptTitle = pathPromptTarget?.let(::pathPromptTitle),
+                    pathPromptInitial = pathPromptInitial,
+                    onPathPromptConfirm = { path -> confirmPathPrompt(path) },
+                    onPathPromptDismiss = { pathPromptTarget = null }
                 )
             }
         }
@@ -174,7 +176,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             pendingPick = null
             logMessage(getString(R.string.msg_picker_failed, e.message.orEmpty()))
-            promptForPath(target, "/storage/emulated/0/")
+            showPathPrompt(target)
         }
     }
 
@@ -468,29 +470,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun promptForPath(target: PickTarget, initial: String) {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setSingleLine(false)
-            setText(initial)
-            hint = getString(R.string.dialog_path_hint)
-        }
+    private fun showPathPrompt(target: PickTarget) {
+        pathPromptInitial = "/storage/emulated/0/"
+        pathPromptTarget = target
+    }
 
-        val container = FrameLayout(this).apply {
-            setPadding(48, 16, 48, 0)
-            addView(input)
-        }
+    private fun pathPromptTitle(target: PickTarget): String = getString(
+        if (target == PickTarget.DATA) R.string.label_data_folder else R.string.label_zip_output
+    )
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.dialog_path_title)
-            .setMessage(R.string.dialog_path_message)
-            .setView(container)
-            .setPositiveButton(R.string.dialog_ok) { _, _ ->
-                val path = input.text.toString().trim()
-                if (path.isNotEmpty()) applyPath(target, File(path))
-            }
-            .setNegativeButton(R.string.dialog_cancel, null)
-            .show()
+    private fun confirmPathPrompt(path: String) {
+        val target = pathPromptTarget ?: return
+        pathPromptTarget = null
+        if (path.isNotBlank()) applyPath(target, File(path))
     }
 
     private fun updateUiState() {
