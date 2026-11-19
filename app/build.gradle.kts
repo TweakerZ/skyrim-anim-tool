@@ -21,6 +21,11 @@ android {
         targetSdk = 34
         versionCode = 6
         versionName = "0.1.4"
+
+        // The default build keeps the app out of the drawer. Pass
+        // -PlauncherIcon to ship the same version with a launcher entry.
+        manifestPlaceholders["launcherIconEnabled"] =
+            if (providers.gradleProperty("launcherIcon").isPresent) "true" else "false"
     }
 
     signingConfigs {

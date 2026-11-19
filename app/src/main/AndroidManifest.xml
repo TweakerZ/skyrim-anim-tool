@@ -29,6 +29,19 @@
             <!-- No MAIN/LAUNCHER filter on purpose: the app stays out of the
                  drawer and is launched by Skyrim Mod Loader's plugin section. -->
         </activity>
+
+        <!-- Drawer entry for the -PlauncherIcon build. Disabled in the default
+             build, so the iconless APK has no launchable activity. -->
+        <activity-alias
+            android:name=".ui.LauncherIcon"
+            android:targetActivity=".ui.MainActivity"
+            android:enabled="${launcherIconEnabled}"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>
